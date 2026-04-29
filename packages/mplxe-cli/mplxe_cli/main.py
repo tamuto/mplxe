@@ -14,6 +14,7 @@ from . import __version__
 from .commands.batch import batch_command
 from .commands.explain import explain_command
 from .commands.normalize import normalize_command
+from .commands.suggest import suggest_command
 
 app = typer.Typer(
     name="mplxe",
@@ -30,6 +31,10 @@ app.command(
     "explain",
     help="Show a human-readable breakdown of how a string is normalized.",
 )(explain_command)
+app.command(
+    "suggest",
+    help="Suggest review targets (unmatched / low-confidence rows) without LLM.",
+)(suggest_command)
 
 
 def _version_callback(value: bool) -> None:
