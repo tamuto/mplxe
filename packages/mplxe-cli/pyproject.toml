@@ -10,10 +10,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-pandas = ["pandas>=2.2"]
 dev = [
     "pytest>=8.0",
-    "pandas>=2.2",
 ]
 
 [project.scripts]
