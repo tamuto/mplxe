@@ -1,0 +1,14 @@
+# namespace: common.origin
+
+rules:
+  - id: origin_domestic
+    type: keyword
+    keywords: [国産]
+    attributes: {origin: 国産}
+    priority: 5
+
+  - id: origin_imported
+    type: keyword
+    keywords: [輸入, 海外産]
+    attributes: {origin: 輸入}
+    priority: 5

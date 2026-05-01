@@ -7,8 +7,9 @@ Two rule kinds are supported in v1:
 - `keyword` — a list of literal strings; any substring hit fires the rule.
 
 Each rule may also declare a static `attributes` dict that is merged into
-every match. Higher `priority` wins on attribute conflict (resolved in the
-pipeline, not here).
+every match. The rule's `priority`, `override`, `fallback`, and `namespace`
+flow through onto each emitted Match so the conflict resolver in the
+pipeline can decide who wins without re-reading the rule list.
 """
 from __future__ import annotations
 
@@ -54,8 +55,6 @@ class DefaultRuleMatcher:
             elif rule.type == "keyword":
                 out.extend(self._match_keyword(text, rule))
             else:
-                # Pydantic Literal already constrains this, but be defensive
-                # in case a custom subclass extends Rule.
                 raise RuleError(f"rule {rule.id!r}: unsupported type {rule.type!r}")
         out.sort(key=lambda m: (m.start, m.rule_id))
         return out
@@ -69,17 +68,7 @@ class DefaultRuleMatcher:
                 if value is None:
                     continue
                 attrs[name] = _coerce(value)
-            matches.append(
-                Match(
-                    rule_id=rule.id,
-                    matched_text=m.group(0),
-                    start=m.start(),
-                    end=m.end(),
-                    attributes=attrs,
-                    score=1.0,
-                    kind="regex",
-                )
-            )
+            matches.append(self._build_match(rule, m.group(0), m.start(), m.end(), attrs, "regex"))
         return matches
 
     def _match_keyword(self, text: str, rule: Rule) -> list[Match]:
@@ -93,18 +82,35 @@ class DefaultRuleMatcher:
                 if pos == -1:
                     break
                 matches.append(
-                    Match(
-                        rule_id=rule.id,
-                        matched_text=kw,
-                        start=pos,
-                        end=pos + len(kw),
-                        attributes=dict(rule.attributes),
-                        score=1.0,
-                        kind="keyword",
+                    self._build_match(
+                        rule, kw, pos, pos + len(kw), dict(rule.attributes), "keyword"
                     )
                 )
                 start = pos + 1
         return matches
+
+    @staticmethod
+    def _build_match(
+        rule: Rule,
+        matched_text: str,
+        start: int,
+        end: int,
+        attributes: dict[str, object],
+        kind: str,
+    ) -> Match:
+        return Match(
+            rule_id=rule.id,
+            matched_text=matched_text,
+            start=start,
+            end=end,
+            attributes=attributes,
+            score=1.0,
+            kind=kind,  # type: ignore[arg-type]
+            priority=rule.priority,
+            override=rule.override,
+            fallback=rule.fallback,
+            namespace=rule.namespace,
+        )
 
 
 def _coerce(value: str) -> int | float | str:

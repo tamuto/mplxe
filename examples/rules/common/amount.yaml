@@ -1,0 +1,23 @@
+# namespace: common.amount
+#
+# Generic amount + unit extractors. Reusable across food / chemicals / etc.
+
+rules:
+  - id: amount_g
+    type: regex
+    pattern: '(?P<amount>[0-9]+)\s*g'
+    attributes: {unit: g}
+    priority: 10
+    description: グラム単位の数量を抽出
+
+  - id: amount_kg
+    type: regex
+    pattern: '(?P<amount>[0-9]+(?:\.[0-9]+)?)\s*kg'
+    attributes: {unit: kg}
+    priority: 10
+
+  - id: amount_ml
+    type: regex
+    pattern: '(?P<amount>[0-9]+)\s*ml'
+    attributes: {unit: ml}
+    priority: 10

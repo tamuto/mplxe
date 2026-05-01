@@ -24,8 +24,9 @@ def build_explanations(result: NormalizeResult) -> list[str]:
 
     if dict_matches:
         for m in dict_matches:
+            ns = f" [{m.namespace}]" if m.namespace else ""
             lines.append(
-                f"辞書ヒット: '{m.matched_text}' (位置 {m.start}-{m.end}) "
+                f"辞書ヒット{ns}: '{m.matched_text}' (位置 {m.start}-{m.end}) "
                 f"→ canonical='{m.canonical_name}', "
                 f"category='{m.category or '(未設定)'}'"
             )
@@ -34,9 +35,27 @@ def build_explanations(result: NormalizeResult) -> list[str]:
 
     for m in rule_matches:
         attrs = ", ".join(f"{k}={v}" for k, v in m.attributes.items())
+        ns = f" [{m.namespace}]" if m.namespace else ""
+        flags = []
+        if m.override:
+            flags.append("override")
+        if m.fallback:
+            flags.append("fallback")
+        flag_str = f" {{{','.join(flags)}}}" if flags else ""
         lines.append(
-            f"ルール適用: id={m.rule_id} '{m.matched_text}' "
+            f"ルール適用{ns}: id={m.rule_id}{flag_str} '{m.matched_text}' "
             f"(位置 {m.start}-{m.end}) → {attrs or '(属性なし)'}"
+        )
+
+    for c in result.attribute_conflicts:
+        cand_lines = [
+            f"  - rule={cc.rule_id} value={cc.value!r} "
+            f"priority={cc.priority} override={cc.override}"
+            for cc in c.candidates
+        ]
+        lines.append(
+            f"属性衝突: field={c.field} → 決定値={c.resolved_value!r} "
+            f"(rule={c.resolved_by})\n" + "\n".join(cand_lines)
         )
 
     if result.canonical_name:

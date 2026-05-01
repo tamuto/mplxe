@@ -1,0 +1,26 @@
+# namespace: ingredients.vegetable
+
+dictionaries:
+  ingredients:
+    - canonical_name: 玉ねぎ
+      category: 野菜
+      synonyms: [玉ねぎ, タマネギ, たまねぎ, 玉葱, オニオン]
+    - canonical_name: 人参
+      category: 野菜
+      synonyms: [人参, にんじん, ニンジン, キャロット]
+    - canonical_name: じゃがいも
+      category: 野菜
+      synonyms: [じゃがいも, ジャガイモ, 馬鈴薯, ポテト]
+
+rules:
+  - id: cut_chopped
+    type: keyword
+    keywords: [みじん切り, みじんぎり]
+    attributes: {cut: みじん切り}
+    priority: 5
+
+  - id: cut_sliced
+    type: keyword
+    keywords: [スライス, 薄切り]
+    attributes: {cut: スライス}
+    priority: 5

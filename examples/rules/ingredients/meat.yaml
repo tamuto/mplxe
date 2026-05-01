@@ -1,0 +1,83 @@
+# namespace: ingredients.meat (auto-derived from path)
+#
+# Meat-related canonicals plus part / origin / cooking-method rules.
+
+dictionaries:
+  ingredients:
+    - canonical_name: 鶏肉
+      category: 肉類
+      synonyms:
+        - 鶏肉
+        - とり肉
+        - 鳥肉
+        - チキン
+        - 鶏もも肉
+        - 鶏むね肉
+        - 鶏胸肉
+        - 鶏ささみ
+    - canonical_name: 豚肉
+      category: 肉類
+      synonyms:
+        - 豚肉
+        - ぶた肉
+        - ポーク
+        - 豚バラ
+        - 豚ロース
+    - canonical_name: 牛肉
+      category: 肉類
+      synonyms:
+        - 牛肉
+        - うし肉
+        - ビーフ
+
+rules:
+  # ------------------------------ skin -------------------------------------
+  - id: skin_on
+    type: keyword
+    keywords: [皮付き, 皮つき, 皮あり]
+    attributes: {skin: あり}
+    priority: 10
+
+  - id: skin_off
+    type: keyword
+    keywords: [皮なし, 皮無し]
+    attributes: {skin: なし}
+    priority: 10
+
+  # ------------------------------ part -------------------------------------
+  - id: part_momo
+    type: keyword
+    keywords: [もも]
+    attributes: {part: もも}
+    priority: 5
+
+  - id: part_mune
+    type: keyword
+    keywords: [むね, 胸]
+    attributes: {part: むね}
+    priority: 5
+
+  - id: part_sasami
+    type: keyword
+    keywords: [ささみ, ササミ]
+    attributes: {part: ささみ}
+    priority: 5
+
+  # ------------------------------ cooking method ---------------------------
+  - id: cooking_boiled
+    type: keyword
+    keywords: [ゆで, 茹で, ボイル]
+    attributes: {cooking_method: ゆで}
+    priority: 5
+
+  - id: cooking_grilled
+    type: keyword
+    keywords: [焼き, グリル, ロースト]
+    attributes: {cooking_method: 焼き}
+    priority: 5
+
+  - id: cooking_fried
+    type: keyword
+    keywords: [揚げ, フライ]
+    attributes: {cooking_method: 揚げ}
+    priority: 5

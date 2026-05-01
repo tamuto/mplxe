@@ -54,10 +54,15 @@ def parse_pipeline_config(data: Any) -> PipelineConfig:
     if not isinstance(options, dict):
         raise ConfigError("'options' must be a mapping")
 
+    defaults = data.get("defaults") or {}
+    if not isinstance(defaults, dict):
+        raise ConfigError("'defaults' must be a mapping")
+
     return PipelineConfig(
         dictionaries=dictionaries,
         rules=RuleSet(rules=rules),
         options=options,
+        defaults=defaults,
     )
 
 

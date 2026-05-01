@@ -69,6 +69,8 @@ class LongestSynonymDictionaryMatcher:
                         category=entry.category,
                         score=1.0,
                         kind="dictionary",
+                        priority=entry.priority,
+                        namespace=entry.namespace,
                     )
                 )
                 start = pos + 1
