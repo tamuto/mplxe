@@ -107,7 +107,12 @@ class NormalizePipeline:
             result.matches = [*dict_matches, *rule_matches]
             result.matched_rules = sorted({m.rule_id for m in result.matches})
 
-            best_dict = self._select_canonical(dict_matches)
+            # Suppressed dictionary matches (covered by a longer term) are
+            # kept in `result.matches` for transparency but excluded from
+            # canonical selection, attribute resolution, and confidence.
+            active_dict_matches = [m for m in dict_matches if not m.suppressed]
+
+            best_dict = self._select_canonical(active_dict_matches)
             if best_dict is not None:
                 result.canonical_name = best_dict.canonical_name
                 result.category = best_dict.category
@@ -129,7 +134,7 @@ class NormalizePipeline:
                 result.category = self.config.defaults["category"]
 
             result.confidence = self._confidence(
-                normalized, dict_matches, rule_matches
+                normalized, active_dict_matches, rule_matches
             )
 
             if result.canonical_name is None:

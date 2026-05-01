@@ -75,4 +75,30 @@ class LongestSynonymDictionaryMatcher:
                 )
                 start = pos + 1
         results.sort(key=lambda m: (m.start, -len(m.matched_text)))
+        _mark_suppressed_by_longer(results)
         return results
+
+
+def _mark_suppressed_by_longer(matches: list[Match]) -> None:
+    """Mark shorter dictionary matches whose span overlaps a longer one.
+
+    A match M is suppressed by another match L when their spans overlap and
+    L's matched_text is strictly longer. The longest non-overlapping cover
+    wins; same-length overlapping matches are both kept for the caller to
+    decide. Suppression is in-place — the input list is mutated.
+    """
+    for m in matches:
+        if m.suppressed:
+            continue
+        m_len = m.end - m.start
+        for other in matches:
+            if other is m:
+                continue
+            other_len = other.end - other.start
+            if other_len <= m_len:
+                continue
+            # spans overlap iff each starts before the other ends
+            if other.start < m.end and m.start < other.end:
+                m.suppressed = True
+                m.suppressed_by = other.rule_id
+                break

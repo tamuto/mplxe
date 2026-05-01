@@ -31,6 +31,12 @@ class Match(BaseModel):
     `priority`, `override`, and `fallback` are propagated from the source
     Rule / DictionaryEntry so the conflict resolver does not need to do a
     second lookup. Dictionary matches always have override=False, fallback=False.
+
+    `suppressed` is set when a longer dictionary match covers this one's span.
+    Suppressed matches are kept in the result for transparency but ignored
+    when picking a canonical_name, resolving attribute conflicts, and
+    computing confidence. `suppressed_by` records the rule_id of the
+    suppressing match for explanation purposes.
     """
 
     rule_id: str
@@ -46,6 +52,12 @@ class Match(BaseModel):
     override: bool = False
     fallback: bool = False
     namespace: str | None = None
+    suppressed: bool = False
+    suppressed_by: str | None = None
+
+    @property
+    def length(self) -> int:
+        return self.end - self.start
 
 
 class Rule(BaseModel):

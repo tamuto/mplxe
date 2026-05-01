@@ -1,6 +1,6 @@
 [project]
 name = "mplxe-core"
-version = "0.2.0"
+version = "0.3.0"
 description = "Rule-based business text normalization core library"
 requires-python = ">=3.12"
 dependencies = [
