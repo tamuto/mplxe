@@ -53,7 +53,23 @@ mplxe --help
 | `explain`   | 1 文字列の処理過程を rich で詳細表示 |
 | `suggest`   | 未分類 / 低 confidence / 表記揺れの **レビュー候補** を生成 (LLM 不使用) |
 
-すべてのコマンドは `--rules <path/to/rules.yaml>` で辞書 + ルール定義を読み込みます。
+すべてのコマンドは `--rules <path>` で辞書 + ルール定義を読み込みます。
+`<path>` は **単一の YAML ファイル** または **YAML ファイルが入ったディレクトリ** のどちらでも指定可能です。
+
+```bash
+# 単一ファイル
+mplxe normalize "..." --rules examples/ingredients.yaml
+
+# ディレクトリ — 配下の *.yaml / *.yml を再帰的に読み込み
+# 各ファイルのパスから namespace が自動付与されます
+#   examples/rules/ingredients/meat.yaml → namespace = "ingredients.meat"
+#   examples/rules/common/amount.yaml    → namespace = "common.amount"
+mplxe normalize "..." --rules examples/rules/
+```
+
+ディレクトリ指定は `mplxe-core` の `load_rules()` を呼び、複数 YAML を 1 つの
+`PipelineConfig` にマージします。同じ dictionary 名を複数ファイルで宣言した場合は
+ファイル横断で entries が連結されます。
 
 ---
 
@@ -154,7 +170,7 @@ mplxe suggest batched.csv \
 | オプション | 既定値 | 説明 |
 |---|---|---|
 | `--column / -c`        | (必須) | 解析対象のカラム名 |
-| `--rules / -r`         | なし | rules YAML。`raw` mode では必須、`review` では任意 (辞書類似度を有効化) |
+| `--rules / -r`         | なし | rules YAML ファイル または ディレクトリ。`raw` mode では必須、`review` では任意 (辞書類似度を有効化) |
 | `--output / -o`        | stdout | 出力先 |
 | `--format / -f`        | output 拡張子から推論 | `csv` / `json` |
 | `--mode / -m`          | `raw`  | `raw` / `review` |
@@ -230,6 +246,7 @@ Frequent unknown tokens:
 |---|---|
 | 入力ファイルが無い | exit 2、明確なエラー |
 | `--column` が存在しない | exit 2、利用可能カラム一覧を表示 |
+| `--rules` のパスが無い | exit 2、`rules path not found` を表示 |
 | `--rules` が無い (raw mode) | exit 2、必要である旨を案内 |
 | `--rules` が無い (review mode) | 辞書類似度を無効化して実行 |
 | `rapidfuzz` 未インストール | exit 2、`pip install rapidfuzz` を案内 |

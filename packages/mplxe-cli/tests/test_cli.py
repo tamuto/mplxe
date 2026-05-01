@@ -8,7 +8,9 @@ from typer.testing import CliRunner
 
 from mplxe_cli.main import app
 
-RULES = Path(__file__).resolve().parents[2].parent / "examples" / "ingredients.yaml"
+EXAMPLES = Path(__file__).resolve().parents[2].parent / "examples"
+RULES = EXAMPLES / "ingredients.yaml"
+RULES_DIR = EXAMPLES / "rules"
 runner = CliRunner()
 
 
@@ -63,6 +65,26 @@ def test_batch_bad_column_exits_2(tmp_path: Path) -> None:
     res = runner.invoke(
         app,
         ["batch", str(src), "--column", "missing", "--rules", str(RULES)],
+    )
+    assert res.exit_code == 2
+
+
+def test_normalize_with_rules_directory() -> None:
+    """`--rules <dir>` should load every YAML under the tree via load_rules."""
+    res = runner.invoke(
+        app,
+        ["normalize", "鶏もも肉 皮つき 30g", "--rules", str(RULES_DIR)],
+    )
+    assert res.exit_code == 0, res.stdout
+    payload = json.loads(res.stdout)
+    assert payload["canonical_name"] == "鶏肉"
+    assert payload["attributes"]["amount"] == 30
+
+
+def test_normalize_missing_rules_dir_exits_2(tmp_path: Path) -> None:
+    res = runner.invoke(
+        app,
+        ["normalize", "x", "--rules", str(tmp_path / "missing_dir")],
     )
     assert res.exit_code == 2
 
