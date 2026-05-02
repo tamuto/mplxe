@@ -227,9 +227,20 @@ def suggest_command(
         cur_category = e["category"]
         cur_conf = float(e["confidence"])
         warnings_list = e.get("warnings", [])
+        suppressed_canonicals = e.get("suppressed_canonicals") or []
+
+        # Exclude (a) the canonical the pipeline already chose and
+        # (b) canonicals it explicitly suppressed (covered by a longer match).
+        # Both would otherwise re-surface as fuzzy "near candidates" and
+        # mislead reviewers into thinking the pipeline missed something.
+        exclude = {c for c in (cur_canonical, *suppressed_canonicals) if c}
 
         nearest = (
-            find_nearest(text, candidates, top_k=top_k, min_score=float(min_score))
+            find_nearest(
+                text, candidates,
+                top_k=top_k, min_score=float(min_score),
+                exclude_canonicals=exclude,
+            )
             if candidates
             else []
         )
@@ -270,6 +281,7 @@ def suggest_command(
                 nearest=nearest,
                 sug_types=sug_types,
                 warnings_list=warnings_list,
+                suppressed_canonicals=suppressed_canonicals,
             ),
         })
 
@@ -316,7 +328,13 @@ def _enrich_rows(
     err_console,
     verbose: bool,
 ) -> list[dict]:
-    """Compute current_* fields for each row, normalizing on the fly when needed."""
+    """Compute current_* fields for each row, normalizing on the fly when needed.
+
+    Raw mode also extracts `suppressed_canonicals` — canonicals whose
+    dictionary match was covered by a longer term during normalization.
+    Suggest uses this to keep its near-candidate list from re-surfacing
+    canonicals the pipeline already decided against.
+    """
     out: list[dict] = []
     for i, row in enumerate(rows):
         text = str(row.get(column, "") or "").strip()
@@ -329,9 +347,18 @@ def _enrich_rows(
                     "category": str(row.get("category", "") or "").strip(),
                     "confidence": _to_float(row.get("confidence")),
                     "warnings": [],
+                    "suppressed_canonicals": [],
                 })
             else:
                 result = pipeline.normalize(text)
+                suppressed = sorted({
+                    m.canonical_name
+                    for m in result.matches
+                    if m.kind == "dictionary"
+                    and m.suppressed
+                    and m.canonical_name
+                    and m.canonical_name != (result.canonical_name or "")
+                })
                 out.append({
                     "text": text,
                     "row_index": i,
@@ -339,6 +366,7 @@ def _enrich_rows(
                     "category": result.category or "",
                     "confidence": float(result.confidence),
                     "warnings": list(result.warnings),
+                    "suppressed_canonicals": suppressed,
                 })
                 if verbose:
                     err_console.print(
@@ -357,6 +385,7 @@ def _enrich_rows(
                 "category": "",
                 "confidence": 0.0,
                 "warnings": [f"failed: {e}"],
+                "suppressed_canonicals": [],
             })
     return out
 
@@ -451,6 +480,7 @@ def _build_reason(
     nearest: list[ScoredCandidate],
     sug_types: list[str],
     warnings_list: list[str],
+    suppressed_canonicals: list[str] | None = None,
 ) -> str:
     parts: list[str] = []
     if "unmatched" in sug_types:
@@ -469,6 +499,11 @@ def _build_reason(
         parts.append("同じクラスタに類似した未分類表現が存在します。")
     if "unknown_token" in sug_types and not nearest:
         parts.append("辞書に近い候補が見つかりませんでした — 新規 synonym/rule の追加を検討してください。")
+    if suppressed_canonicals:
+        joined = "、".join(f"「{c}」" for c in suppressed_canonicals)
+        parts.append(
+            f"より長い辞書語に内包されたため候補から除外: {joined}。"
+        )
     for w in warnings_list:
         parts.append(f"warning: {w}")
     return " ".join(parts) or "確認対象として抽出されました。"

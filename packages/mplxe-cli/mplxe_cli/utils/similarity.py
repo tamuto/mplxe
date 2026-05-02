@@ -76,16 +76,24 @@ def find_nearest(
     *,
     top_k: int = 3,
     min_score: float = 0.0,
+    exclude_canonicals: Iterable[str] | None = None,
 ) -> list[ScoredCandidate]:
     """Return the top_k most similar candidates above min_score.
 
     Ties are broken by the order candidates appear in the input iterable,
     so callers should pass them in priority order if they care.
+
+    `exclude_canonicals` drops any candidate whose canonical_name is in the
+    set — used by suggest to hide canonicals that the pipeline already
+    chose or explicitly suppressed (covered by a longer dictionary term).
     """
     if not text:
         return []
+    excluded = set(exclude_canonicals or ())
     scored: list[ScoredCandidate] = []
     for c in candidates:
+        if c.canonical_name in excluded:
+            continue
         s = fuzzy_score(text, c.matched_term)
         if s >= min_score:
             scored.append(

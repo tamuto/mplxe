@@ -50,6 +50,24 @@ def test_find_nearest_returns_top_k_unique_canonicals() -> None:
     assert result[0].canonical_name == "鶏肉"
 
 
+def test_find_nearest_excludes_canonicals() -> None:
+    candidates = [
+        Candidate("あひる卵", "あひる卵", "dictionary.canonical"),
+        Candidate("あひる", "あひる", "dictionary.canonical"),
+    ]
+    # without exclusion: both score 100 against the input
+    full = find_nearest("あひる卵 ピータン", candidates, top_k=5, min_score=50)
+    assert {r.canonical_name for r in full} == {"あひる卵", "あひる"}
+
+    # exclude_canonicals removes the suppressed shorter term from results
+    filtered = find_nearest(
+        "あひる卵 ピータン", candidates,
+        top_k=5, min_score=50,
+        exclude_canonicals={"あひる"},
+    )
+    assert {r.canonical_name for r in filtered} == {"あひる卵"}
+
+
 def test_greedy_cluster_groups_similar_strings() -> None:
     texts = ["鶏もも皮付き", "鶏もも皮つき", "鶏もも皮付", "豚バラ"]
     clusters = greedy_cluster(texts, min_score=70)
@@ -208,6 +226,59 @@ def test_suggest_raw_without_rules_exits_2(tmp_path: Path) -> None:
         ["suggest", str(src), "--column", "ingredient_name"],
     )
     assert res.exit_code == 2
+
+
+def test_suggest_excludes_suppressed_canonicals(tmp_path: Path) -> None:
+    """A canonical suppressed by a longer match must not surface as a near
+    candidate in suggest output. This protects reviewers from chasing
+    a shorter term the pipeline already covered."""
+    rules_yaml = tmp_path / "rules.yaml"
+    rules_yaml.write_text(
+        "dictionaries:\n"
+        "  ingredients:\n"
+        "    - canonical_name: あひる卵\n"
+        "      category: 卵類\n"
+        "      synonyms: [あひる卵]\n"
+        "    - canonical_name: あひる\n"
+        "      category: その他肉類\n"
+        "      synonyms: [あひる, かも]\n"
+        "rules: []\n",
+        encoding="utf-8",
+    )
+    src = tmp_path / "in.csv"
+    src.write_text(
+        "id,ingredient_name\n1,あひる卵 ピータン\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "suggestions.csv"
+    res = runner.invoke(
+        app,
+        [
+            "suggest", str(src),
+            "--column", "ingredient_name",
+            "--rules", str(rules_yaml),
+            "--output", str(out),
+            "--min-score", "50",
+        ],
+    )
+    assert res.exit_code == 0, res.stdout
+
+    rows = _read_csv(out)
+    row = next(r for r in rows if r["text"] == "あひる卵 ピータン")
+    # the pipeline correctly chose the longer term
+    assert row["current_canonical_name"] == "あひる卵"
+    assert row["current_category"] == "卵類"
+    # suppressed canonical must not appear as a near candidate
+    assert row["nearest_canonical_name"] != "あひる"
+    candidates = json.loads(row["candidate_json"])
+    assert all(c["canonical_name"] != "あひる" for c in candidates), (
+        f"suppressed canonical leaked into nearest: {candidates}"
+    )
+    # and the chosen canonical itself shouldn't be re-surfaced
+    assert all(c["canonical_name"] != "あひる卵" for c in candidates)
+    # the reason explains the suppression-driven exclusion
+    assert "あひる" in row["reason"]
+    assert "内包" in row["reason"]
 
 
 def test_suggest_review_without_rules_runs(tmp_path: Path) -> None:
