@@ -99,3 +99,43 @@ def test_explain_renders_sections() -> None:
     assert "Dictionary Match" in out
     assert "Rules Applied" in out
     assert "Result" in out
+
+
+def test_explain_separates_suppressed_matches(tmp_path: Path) -> None:
+    """`mplxe explain` must show suppressed dictionary candidates in their own
+    labeled section so reviewers can see which shorter terms were dropped
+    by a longer match."""
+    rules_yaml = tmp_path / "rules.yaml"
+    rules_yaml.write_text(
+        "dictionaries:\n"
+        "  ingredients:\n"
+        "    - canonical_name: あひる卵\n"
+        "      category: 卵類\n"
+        "      synonyms: [あひる卵]\n"
+        "    - canonical_name: あひる\n"
+        "      category: その他肉類\n"
+        "      synonyms: [あひる, かも]\n"
+        "rules: []\n",
+        encoding="utf-8",
+    )
+    res = runner.invoke(
+        app, ["explain", "あひる卵 ピータン", "--rules", str(rules_yaml)]
+    )
+    assert res.exit_code == 0, res.stdout
+    out = res.stdout
+    # active dictionary section keeps the chosen longer term
+    assert "Dictionary Match" in out
+    assert "あひる卵" in out
+    # suppressed section appears with the dropped shorter term
+    assert "Suppressed Matches" in out
+    # the suppressing rule_id is referenced so reviewers can trace it
+    assert "dict:ingredients:あひる卵" in out
+
+
+def test_explain_omits_suppressed_section_when_none(tmp_path: Path) -> None:
+    """No suppressed-matches section should appear for clean inputs."""
+    res = runner.invoke(
+        app, ["explain", "鶏もも肉 30g", "--rules", str(RULES)]
+    )
+    assert res.exit_code == 0, res.stdout
+    assert "Suppressed Matches" not in res.stdout
