@@ -10,6 +10,8 @@ from typing import Annotated
 
 import typer
 
+import mplxe as _mplxe_core
+
 from . import __version__
 from .commands.batch import batch_command
 from .commands.explain import explain_command
@@ -39,7 +41,8 @@ app.command(
 
 def _version_callback(value: bool) -> None:
     if value:
-        typer.echo(f"mplxe {__version__}")
+        core_version = getattr(_mplxe_core, "__version__", "unknown")
+        typer.echo(f"mplxe-cli {__version__} (mplxe-core {core_version})")
         raise typer.Exit()
 
 
