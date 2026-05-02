@@ -61,16 +61,35 @@ def render_explain(result: NormalizeResult, *, console: Console) -> None:
     else:
         console.print("\n[bold cyan]Tokens:[/bold cyan]\n  [dim](none)[/dim]")
 
-    # Dictionary matches
+    # Dictionary matches — split active vs suppressed so reviewers can see
+    # which shorter candidates were dropped because a longer term covered them.
     dict_matches = [m for m in result.matches if m.kind == "dictionary"]
+    active_dicts = [m for m in dict_matches if not m.suppressed]
+    suppressed_dicts = [m for m in dict_matches if m.suppressed]
+
     console.print("\n[bold cyan]Dictionary Match:[/bold cyan]")
-    if dict_matches:
-        for m in dict_matches:
+    if active_dicts:
+        for m in active_dicts:
             arrow = f"[green]{m.matched_text}[/green] → [bold]{m.canonical_name}[/bold]"
             cat = f" [dim]({m.category})[/dim]" if m.category else ""
             console.print(f"  {arrow}{cat}")
     else:
         console.print("  [dim](no match)[/dim]")
+
+    if suppressed_dicts:
+        console.print(
+            "\n[bold cyan]Suppressed Matches:[/bold cyan] "
+            "[dim](covered by a longer dictionary term — ignored for "
+            "canonical / category / confidence)[/dim]"
+        )
+        for m in suppressed_dicts:
+            arrow = (
+                f"[strike]{m.matched_text}[/strike] → "
+                f"[dim]{m.canonical_name}[/dim]"
+            )
+            cat = f" [dim]({m.category})[/dim]" if m.category else ""
+            by = f" [dim]suppressed by: {m.suppressed_by}[/dim]" if m.suppressed_by else ""
+            console.print(f"  {arrow}{cat}{by}")
 
     # Rules applied
     rule_matches = [m for m in result.matches if m.kind != "dictionary"]
