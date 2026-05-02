@@ -228,10 +228,11 @@ def test_suggest_raw_without_rules_exits_2(tmp_path: Path) -> None:
     assert res.exit_code == 2
 
 
-def test_suggest_excludes_suppressed_canonicals(tmp_path: Path) -> None:
-    """A canonical suppressed by a longer match must not surface as a near
-    candidate in suggest output. This protects reviewers from chasing
-    a shorter term the pipeline already covered."""
+def test_suggest_flags_suppressed_in_candidate_json(tmp_path: Path) -> None:
+    """A canonical suppressed by a longer match must NOT drive nearest_*
+    columns (which are actionable suggestions), but MUST appear in
+    candidate_json with `suppressed: true` and `suppressed_by` so reviewers
+    can see what the pipeline decided against and why."""
     rules_yaml = tmp_path / "rules.yaml"
     rules_yaml.write_text(
         "dictionaries:\n"
@@ -268,15 +269,27 @@ def test_suggest_excludes_suppressed_canonicals(tmp_path: Path) -> None:
     # the pipeline correctly chose the longer term
     assert row["current_canonical_name"] == "あひる卵"
     assert row["current_category"] == "卵類"
-    # suppressed canonical must not appear as a near candidate
+    # suppressed canonical must NOT drive the actionable nearest_* columns
     assert row["nearest_canonical_name"] != "あひる"
+
     candidates = json.loads(row["candidate_json"])
-    assert all(c["canonical_name"] != "あひる" for c in candidates), (
-        f"suppressed canonical leaked into nearest: {candidates}"
+    by_canonical = {c["canonical_name"]: c for c in candidates}
+
+    # the chosen canonical appears flagged as is_current
+    assert "あひる卵" in by_canonical
+    assert by_canonical["あひる卵"].get("is_current") is True
+    assert "suppressed" not in by_canonical["あひる卵"]
+
+    # the suppressed canonical appears with both flags so reviewers can see
+    # which longer term covered it
+    assert "あひる" in by_canonical, (
+        f"suppressed canonical missing from candidate_json: {candidates}"
     )
-    # and the chosen canonical itself shouldn't be re-surfaced
-    assert all(c["canonical_name"] != "あひる卵" for c in candidates)
-    # the reason explains the suppression-driven exclusion
+    assert by_canonical["あひる"].get("suppressed") is True
+    assert by_canonical["あひる"].get("suppressed_by") == "dict:ingredients:あひる卵"
+    assert "is_current" not in by_canonical["あひる"]
+
+    # the reason still explains the suppression-driven exclusion
     assert "あひる" in row["reason"]
     assert "内包" in row["reason"]
 

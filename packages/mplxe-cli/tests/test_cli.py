@@ -17,7 +17,15 @@ runner = CliRunner()
 def test_version() -> None:
     res = runner.invoke(app, ["--version"])
     assert res.exit_code == 0
-    assert "mplxe" in res.stdout
+    out = res.stdout
+    # both packages must be reported so users can verify which mplxe-core
+    # the installed CLI is talking to
+    assert "mplxe-cli" in out
+    assert "mplxe-core" in out
+    import mplxe as _core
+    assert _core.__version__ in out
+    from mplxe_cli import __version__ as cli_version
+    assert cli_version in out
 
 
 def test_normalize_outputs_json() -> None:

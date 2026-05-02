@@ -228,28 +228,43 @@ def suggest_command(
         cur_conf = float(e["confidence"])
         warnings_list = e.get("warnings", [])
         suppressed_canonicals = e.get("suppressed_canonicals") or []
+        suppressed_by_canonical = e.get("suppressed_by_canonical") or {}
+        suppressed_set = set(suppressed_canonicals)
 
-        # Exclude (a) the canonical the pipeline already chose and
-        # (b) canonicals it explicitly suppressed (covered by a longer match).
-        # Both would otherwise re-surface as fuzzy "near candidates" and
-        # mislead reviewers into thinking the pipeline missed something.
-        exclude = {c for c in (cur_canonical, *suppressed_canonicals) if c}
-
-        nearest = (
+        # Get the full nearest list (no exclusion) so candidate_json can
+        # show suppressed entries with a flag — reviewers need to see the
+        # whole picture. The actionable list is then derived by dropping
+        # the chosen canonical and any suppressed ones.
+        all_nearest = (
             find_nearest(
                 text, candidates,
-                top_k=top_k, min_score=float(min_score),
-                exclude_canonicals=exclude,
+                top_k=max(top_k * 2, top_k + len(suppressed_set) + 1),
+                min_score=float(min_score),
             )
             if candidates
             else []
         )
+        actionable = [
+            c for c in all_nearest
+            if c.canonical_name != cur_canonical
+            and c.canonical_name not in suppressed_set
+        ][:top_k]
+
+        candidate_dicts = [
+            _candidate_to_dict(
+                c,
+                suppressed=c.canonical_name in suppressed_set,
+                suppressed_by=suppressed_by_canonical.get(c.canonical_name),
+                is_current=bool(cur_canonical) and c.canonical_name == cur_canonical,
+            )
+            for c in all_nearest[:max(top_k, top_k + len(suppressed_set))]
+        ]
 
         sug_types = _suggestion_types(
             cur_canonical=cur_canonical,
             cur_conf=cur_conf,
             low_confidence=low_confidence,
-            nearest=nearest,
+            nearest=actionable,
             warnings_list=warnings_list,
             cluster_id=clusters.get(text, 0),
             cluster_sizes=_cluster_sizes(clusters),
@@ -268,17 +283,15 @@ def suggest_command(
             "current_category": cur_category,
             "current_confidence": round(cur_conf, 3),
             "suggestion_type": ",".join(sug_types),
-            "nearest_canonical_name": nearest[0].canonical_name if nearest else "",
-            "nearest_matched_term": nearest[0].matched_term if nearest else "",
-            "nearest_score": round(nearest[0].score, 1) if nearest else None,
-            "candidate_json": json.dumps(
-                [_candidate_to_dict(c) for c in nearest], ensure_ascii=False
-            ),
+            "nearest_canonical_name": actionable[0].canonical_name if actionable else "",
+            "nearest_matched_term": actionable[0].matched_term if actionable else "",
+            "nearest_score": round(actionable[0].score, 1) if actionable else None,
+            "candidate_json": json.dumps(candidate_dicts, ensure_ascii=False),
             "reason": _build_reason(
                 cur_canonical=cur_canonical,
                 cur_conf=cur_conf,
                 low_confidence=low_confidence,
-                nearest=nearest,
+                nearest=actionable,
                 sug_types=sug_types,
                 warnings_list=warnings_list,
                 suppressed_canonicals=suppressed_canonicals,
@@ -348,17 +361,23 @@ def _enrich_rows(
                     "confidence": _to_float(row.get("confidence")),
                     "warnings": [],
                     "suppressed_canonicals": [],
+                    "suppressed_by_canonical": {},
                 })
             else:
                 result = pipeline.normalize(text)
-                suppressed = sorted({
-                    m.canonical_name
-                    for m in result.matches
-                    if m.kind == "dictionary"
-                    and m.suppressed
-                    and m.canonical_name
-                    and m.canonical_name != (result.canonical_name or "")
-                })
+                suppressed_by_canonical: dict[str, str] = {}
+                for m in result.matches:
+                    if (
+                        m.kind == "dictionary"
+                        and m.suppressed
+                        and m.canonical_name
+                        and m.canonical_name != (result.canonical_name or "")
+                    ):
+                        # first-seen wins; multiple synonyms of the same
+                        # canonical share the same suppressor in practice.
+                        suppressed_by_canonical.setdefault(
+                            m.canonical_name, m.suppressed_by or ""
+                        )
                 out.append({
                     "text": text,
                     "row_index": i,
@@ -366,7 +385,8 @@ def _enrich_rows(
                     "category": result.category or "",
                     "confidence": float(result.confidence),
                     "warnings": list(result.warnings),
-                    "suppressed_canonicals": suppressed,
+                    "suppressed_canonicals": sorted(suppressed_by_canonical.keys()),
+                    "suppressed_by_canonical": suppressed_by_canonical,
                 })
                 if verbose:
                     err_console.print(
@@ -386,6 +406,7 @@ def _enrich_rows(
                 "confidence": 0.0,
                 "warnings": [f"failed: {e}"],
                 "suppressed_canonicals": [],
+                "suppressed_by_canonical": {},
             })
     return out
 
@@ -463,13 +484,35 @@ def _suggestion_types(
     return out or ["unmatched"]
 
 
-def _candidate_to_dict(c: ScoredCandidate) -> dict[str, Any]:
-    return {
+def _candidate_to_dict(
+    c: ScoredCandidate,
+    *,
+    suppressed: bool = False,
+    suppressed_by: str | None = None,
+    is_current: bool = False,
+) -> dict[str, Any]:
+    """Serialize a fuzzy-similarity candidate, with pipeline status flags.
+
+    `suppressed` / `suppressed_by` are set when this candidate's canonical
+    was covered by a longer dictionary term during normalization — keeping
+    it in candidate_json (not silently dropping it) lets reviewers see
+    why the term won't surface as a real suggestion. `is_current` flags
+    the canonical the pipeline already chose, to distinguish "already
+    decided" from "actionable alternative".
+    """
+    out: dict[str, Any] = {
         "canonical_name": c.canonical_name,
         "matched_term": c.matched_term,
         "score": round(c.score, 1),
         "source": c.source,
     }
+    if suppressed:
+        out["suppressed"] = True
+        if suppressed_by:
+            out["suppressed_by"] = suppressed_by
+    if is_current:
+        out["is_current"] = True
+    return out
 
 
 def _build_reason(
