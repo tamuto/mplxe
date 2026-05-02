@@ -294,6 +294,64 @@ def test_suggest_flags_suppressed_in_candidate_json(tmp_path: Path) -> None:
     assert "内包" in row["reason"]
 
 
+def test_suggest_review_mode_still_flags_suppressed(tmp_path: Path) -> None:
+    """Review mode (CSV with canonical_name + confidence) must STILL show
+    suppressed candidates with their flags. Without this, the only place
+    reviewers can see "this shorter term was covered by a longer one"
+    info is gone — defeating the point of the suppression feature for
+    anyone working from a batch-output CSV."""
+    rules_yaml = tmp_path / "rules.yaml"
+    rules_yaml.write_text(
+        "dictionaries:\n"
+        "  ingredients:\n"
+        "    - canonical_name: あひる卵\n"
+        "      category: 卵類\n"
+        "      synonyms: [あひる卵]\n"
+        "    - canonical_name: あひる\n"
+        "      category: その他肉類\n"
+        "      synonyms: [あひる, かも]\n"
+        "rules: []\n",
+        encoding="utf-8",
+    )
+    # CSV simulating a batched output — already has canonical_name/confidence
+    src = tmp_path / "batched.csv"
+    src.write_text(
+        "id,ingredient_name,canonical_name,category,confidence\n"
+        # full-width space matches the user's reported scenario
+        "1,あひる卵　ピータン,あひる卵,卵類,0.5\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "suggestions.csv"
+    res = runner.invoke(
+        app,
+        [
+            "suggest", str(src),
+            "--column", "ingredient_name",
+            "--rules", str(rules_yaml),
+            "--output", str(out),
+            "--mode", "review",
+            "--low-confidence", "0.7",
+            "--min-score", "50",
+        ],
+    )
+    assert res.exit_code == 0, res.stdout
+
+    rows = _read_csv(out)
+    row = next(r for r in rows if "あひる卵" in r["text"])
+    candidates = json.loads(row["candidate_json"])
+    by_canonical = {c["canonical_name"]: c for c in candidates}
+
+    assert "あひる" in by_canonical, (
+        "review mode dropped suppressed canonical from candidate_json: "
+        f"{candidates}"
+    )
+    assert by_canonical["あひる"].get("suppressed") is True, (
+        "review mode failed to flag suppressed candidate: "
+        f"{by_canonical['あひる']}"
+    )
+    assert by_canonical["あひる"].get("suppressed_by") == "dict:ingredients:あひる卵"
+
+
 def test_suggest_review_without_rules_runs(tmp_path: Path) -> None:
     """Review mode with existing columns should run even without --rules."""
     src = tmp_path / "batched.csv"

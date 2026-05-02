@@ -343,41 +343,36 @@ def _enrich_rows(
 ) -> list[dict]:
     """Compute current_* fields for each row, normalizing on the fly when needed.
 
-    Raw mode also extracts `suppressed_canonicals` — canonicals whose
-    dictionary match was covered by a longer term during normalization.
-    Suggest uses this to keep its near-candidate list from re-surfacing
-    canonicals the pipeline already decided against.
+    Both raw and review mode populate `suppressed_canonicals` /
+    `suppressed_by_canonical` — canonicals whose dictionary match was
+    covered by a longer term during normalization. Reviewers need this
+    to interpret the near-candidate list correctly. In review mode the
+    current_* values still come from the CSV (that's the point of review
+    mode), but we run the pipeline anyway when one is available, just to
+    extract suppression info.
     """
     out: list[dict] = []
     for i, row in enumerate(rows):
         text = str(row.get(column, "") or "").strip()
         try:
             if has_review_columns:
+                cur_canonical = str(row.get("canonical_name", "") or "").strip()
+                review_supp = _extract_suppression(text, cur_canonical, pipeline)
                 out.append({
                     "text": text,
                     "row_index": i,
-                    "canonical_name": str(row.get("canonical_name", "") or "").strip(),
+                    "canonical_name": cur_canonical,
                     "category": str(row.get("category", "") or "").strip(),
                     "confidence": _to_float(row.get("confidence")),
                     "warnings": [],
-                    "suppressed_canonicals": [],
-                    "suppressed_by_canonical": {},
+                    "suppressed_canonicals": sorted(review_supp.keys()),
+                    "suppressed_by_canonical": review_supp,
                 })
             else:
                 result = pipeline.normalize(text)
-                suppressed_by_canonical: dict[str, str] = {}
-                for m in result.matches:
-                    if (
-                        m.kind == "dictionary"
-                        and m.suppressed
-                        and m.canonical_name
-                        and m.canonical_name != (result.canonical_name or "")
-                    ):
-                        # first-seen wins; multiple synonyms of the same
-                        # canonical share the same suppressor in practice.
-                        suppressed_by_canonical.setdefault(
-                            m.canonical_name, m.suppressed_by or ""
-                        )
+                suppressed_by_canonical = _suppression_from_result(
+                    result.matches, result.canonical_name or ""
+                )
                 out.append({
                     "text": text,
                     "row_index": i,
@@ -409,6 +404,39 @@ def _enrich_rows(
                 "suppressed_by_canonical": {},
             })
     return out
+
+
+def _suppression_from_result(matches, chosen_canonical: str) -> dict[str, str]:
+    """Return canonical -> suppressed_by rule_id for dict matches the pipeline
+    suppressed (covered by a longer term). The chosen canonical is excluded
+    so we don't mark the winning entry as a "suppressed alternative"."""
+    out: dict[str, str] = {}
+    for m in matches:
+        if (
+            m.kind == "dictionary"
+            and m.suppressed
+            and m.canonical_name
+            and m.canonical_name != chosen_canonical
+        ):
+            # first-seen wins; multiple synonyms of the same canonical
+            # share the same suppressor in practice.
+            out.setdefault(m.canonical_name, m.suppressed_by or "")
+    return out
+
+
+def _extract_suppression(
+    text: str, chosen_canonical: str, pipeline,
+) -> dict[str, str]:
+    """Run the pipeline solely to harvest suppression info for review-mode
+    rows. Returns {} when no pipeline is available or the call fails —
+    review mode must remain robust if rules are missing or stale."""
+    if not text or pipeline is None:
+        return {}
+    try:
+        result = pipeline.normalize(text)
+    except Exception:
+        return {}
+    return _suppression_from_result(result.matches, chosen_canonical)
 
 
 def _is_target(e: dict, low_confidence: float) -> bool:
